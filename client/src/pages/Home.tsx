@@ -13,8 +13,10 @@ import {
   LineChart,
   MousePointer2,
   Move,
+  Moon,
   Sparkles,
   Square,
+  Sun,
   Trash2,
   Upload,
   Undo2,
@@ -46,7 +48,7 @@ const toolItems: { id: Tool; label: string; shortcut: string; icon: typeof Mouse
 ];
 
 export default function Home() {
-  const [tool, setTool] = useState<Tool>("select");
+  const [tool, setTool] = useState<Tool>(() => (localStorage.getItem("annotate:last-tool") as Tool) || "select");
   const [image, setImage] = useState<string | null>(null);
   const [marks, setMarks] = useState<Mark[]>([]);
   const [draft, setDraft] = useState<Mark | null>(null);
@@ -54,10 +56,18 @@ export default function Home() {
   const [showLayers, setShowLayers] = useState(false);
   const [notice, setNotice] = useState("Ready to annotate");
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
-  const [arrowWidth, setArrowWidth] = useState(3);
-  const [arrowStyle, setArrowStyle] = useState<ArrowStyle>("solid");
+  const [arrowWidth, setArrowWidth] = useState(() => Number(localStorage.getItem("annotate:arrow-width")) || 3);
+  const [arrowStyle, setArrowStyle] = useState<ArrowStyle>(() => (localStorage.getItem("annotate:arrow-style") as ArrowStyle) || "solid");
+  const [theme, setTheme] = useState<"dark" | "light">(() => (localStorage.getItem("annotate:theme") as "dark" | "light") || "dark");
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    localStorage.setItem("annotate:last-tool", tool);
+    localStorage.setItem("annotate:arrow-width", String(arrowWidth));
+    localStorage.setItem("annotate:arrow-style", arrowStyle);
+    localStorage.setItem("annotate:theme", theme);
+  }, [tool, arrowWidth, arrowStyle, theme]);
 
   const pushMarks = useCallback((next: Mark[]) => {
     setHistory((prev) => [...prev.slice(-19), marks]);
@@ -129,6 +139,8 @@ export default function Home() {
 
   const onPointerDown = (event: React.PointerEvent) => {
     if (!image || tool === "select") return;
+    event.preventDefault();
+    event.stopPropagation();
     const point = pointFromEvent(event);
     setDraft({ id: Date.now(), tool, x: point.x, y: point.y, x2: point.x, y2: point.y, arrowWidth: tool === "arrow" ? arrowWidth : undefined, arrowStyle: tool === "arrow" ? arrowStyle : undefined });
     try { (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId); } catch { /* Synthetic or unsupported pointer events can omit capture. */ }
@@ -261,7 +273,7 @@ export default function Home() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${theme === "light" ? "light-mode" : ""}`}>
       <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-mark"><Sparkles size={15} strokeWidth={2.4} /></div>
@@ -270,7 +282,8 @@ export default function Home() {
         <div className="topbar-meta"><span className="live-dot" /> Local canvas <span className="meta-divider" /> {marks.length} {marks.length === 1 ? "mark" : "marks"}</div>
         <div className="top-actions">
           <button className="icon-button" title="Undo" onClick={undo} disabled={!history.length}><Undo2 size={16} /></button>
-        <button className={`icon-button ${showLayers ? "active" : ""}`} title="Layers" onClick={() => setShowLayers((value) => !value)}><Layers3 size={16} /></button>
+          <button className={`icon-button ${showLayers ? "active" : ""}`} title="Layers" onClick={() => setShowLayers((value) => !value)}><Layers3 size={16} /></button>
+          <button className="icon-button" title={theme === "dark" ? "Switch to day mode" : "Switch to night mode"} onClick={() => setTheme((value) => value === "dark" ? "light" : "dark")}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button>
           <button className="upload-button" onClick={() => fileRef.current?.click()}><Upload size={15} /> Import <span className="kbd">⌘O</span></button>
           <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => loadFile(event.target.files?.[0])} />
         </div>
@@ -296,7 +309,7 @@ export default function Home() {
       <div className="workspace">
         <div className="canvas-wrap" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => setDraft(null)} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop} onDoubleClick={() => !image && fileRef.current?.click()}>
           <div className={`canvas ${image ? "has-image" : ""}`} ref={canvasRef} onContextMenu={(event) => { if (!image) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }); }}>
-            {image ? <img className="source-image" src={image} alt="Uploaded annotation source" /> : <div className="empty-state"><div className="empty-icon"><ImageIcon size={22} /></div><h1>Paste an image to start</h1><p>Drop an image here or press <kbd>⌘ V</kbd> to paste from clipboard</p><button className="empty-cta" onClick={() => fileRef.current?.click()}><Upload size={15} /> Choose image</button><div className="empty-hint">PNG, JPG or WebP · everything stays in your browser</div></div>}
+            {image ? <img className="source-image" draggable={false} onDragStart={(event) => event.preventDefault()} src={image} alt="Uploaded annotation source" /> : <div className="empty-state"><div className="empty-icon"><ImageIcon size={22} /></div><h1>Paste an image to start</h1><p>Drop an image here or press <kbd>⌘ V</kbd> to paste from clipboard</p><button className="empty-cta" onClick={() => fileRef.current?.click()}><Upload size={15} /> Choose image</button><div className="empty-hint">PNG, JPG or WebP · everything stays in your browser</div></div>}
             <svg className="marks-layer" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="arrowhead" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="none" stroke="#ff5364" strokeWidth="1.4" /></marker></defs>{marks.map((mark) => renderMark(mark))}{draft && renderMark(draft, true)}</svg>
             {image && <div className="canvas-corners"><span /><span /><span /><span /></div>}
           </div>
