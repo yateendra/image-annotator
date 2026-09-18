@@ -147,13 +147,64 @@ export default function Home() {
     setNotice("Annotations cleared");
   };
   const removeMark = (id: number) => pushMarks(marks.filter((mark) => mark.id !== id));
+  const renderAnnotatedImage = async () => {
+    if (!image) return null;
+    const source = new Image();
+    source.src = image;
+    await new Promise<void>((resolve, reject) => { source.onload = () => resolve(); source.onerror = () => reject(new Error("Unable to load image")); });
+    const visibleCanvas = canvasRef.current?.querySelector(".canvas") as HTMLElement | null;
+    const displayWidth = visibleCanvas?.clientWidth || 1600;
+    const displayHeight = visibleCanvas?.clientHeight || 900;
+    const exportCanvas = document.createElement("canvas");
+    exportCanvas.width = 1600;
+    exportCanvas.height = Math.max(700, Math.round(1600 * (displayHeight / displayWidth)));
+    const context = exportCanvas.getContext("2d");
+    if (!context) return null;
+    const sx = exportCanvas.width / displayWidth;
+    const sy = exportCanvas.height / displayHeight;
+    context.fillStyle = "#16171d";
+    context.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+    const imageScale = Math.min((exportCanvas.width - 40 * sx) / source.naturalWidth, (exportCanvas.height - 40 * sy) / source.naturalHeight);
+    const imageWidth = source.naturalWidth * imageScale;
+    const imageHeight = source.naturalHeight * imageScale;
+    context.drawImage(source, (exportCanvas.width - imageWidth) / 2, (exportCanvas.height - imageHeight) / 2, imageWidth, imageHeight);
+    const px = (value: number) => (value / 100) * exportCanvas.width;
+    const py = (value: number) => (value / 100) * exportCanvas.height;
+    marks.forEach((mark) => {
+      context.save();
+      context.lineCap = "round";
+      context.lineJoin = "round";
+      context.strokeStyle = mark.tool === "arrow" ? "#ff5364" : mark.tool === "marker" ? "#f5c56d" : "#a7b4ff";
+      context.lineWidth = mark.tool === "arrow" ? arrowWidth * ((sx + sy) / 2) : mark.tool === "marker" ? 18 * ((sx + sy) / 2) : 2.2 * ((sx + sy) / 2);
+      if (mark.tool === "arrow" && arrowStyle !== "solid") context.setLineDash(arrowStyle === "dashed" ? [10 * sx, 7 * sx] : [2 * sx, 7 * sx]);
+      if (mark.tool === "marker") context.globalAlpha = 0.28;
+      context.beginPath();
+      if (mark.tool === "box") context.rect(Math.min(px(mark.x), px(mark.x2)), Math.min(py(mark.y), py(mark.y2)), Math.abs(px(mark.x2) - px(mark.x)), Math.abs(py(mark.y2) - py(mark.y)));
+      else if (mark.tool === "oval") context.ellipse((px(mark.x) + px(mark.x2)) / 2, (py(mark.y) + py(mark.y2)) / 2, Math.abs(px(mark.x2) - px(mark.x)) / 2, Math.abs(py(mark.y2) - py(mark.y)) / 2, 0, 0, Math.PI * 2);
+      else { context.moveTo(px(mark.x), py(mark.y)); context.lineTo(px(mark.x2), py(mark.y2)); }
+      context.stroke();
+      if (mark.tool === "arrow") {
+        const angle = Math.atan2(py(mark.y2) - py(mark.y), px(mark.x2) - px(mark.x));
+        const head = 13 * ((sx + sy) / 2);
+        context.setLineDash([]);
+        context.beginPath();
+        context.moveTo(px(mark.x2), py(mark.y2));
+        context.lineTo(px(mark.x2) - head * Math.cos(angle - Math.PI / 6), py(mark.y2) - head * Math.sin(angle - Math.PI / 6));
+        context.moveTo(px(mark.x2), py(mark.y2));
+        context.lineTo(px(mark.x2) - head * Math.cos(angle + Math.PI / 6), py(mark.y2) - head * Math.sin(angle + Math.PI / 6));
+        context.stroke();
+      }
+      context.restore();
+    });
+    return await new Promise<Blob | null>((resolve) => exportCanvas.toBlob(resolve, "image/png"));
+  };
   const copyImage = async () => {
     if (!image) return;
     try {
-      const response = await fetch(image);
-      const blob = await response.blob();
-      await navigator.clipboard.write([new ClipboardItem({ [blob.type || "image/png"]: blob })]);
-      setNotice("Image copied to clipboard");
+      const blob = await renderAnnotatedImage();
+      if (!blob) throw new Error("Unable to render image");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      setNotice(marks.length ? "Image and annotations copied" : "Image copied to clipboard");
     } catch {
       setNotice("Copy unavailable in this browser");
     }
@@ -161,12 +212,16 @@ export default function Home() {
   };
   const downloadImage = () => {
     if (!image) return;
-    const link = document.createElement("a");
-    link.href = image;
-    link.download = `annotate-image-${new Date().toISOString().slice(0, 10)}.png`;
-    link.click();
-    setNotice("Image download started");
-    setContextMenu(null);
+    renderAnnotatedImage().then((blob) => {
+      if (!blob) return;
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `annotate-image-${new Date().toISOString().slice(0, 10)}.png`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setNotice(marks.length ? "Image and annotations download started" : "Image download started");
+      setContextMenu(null);
+    });
   };
   const duplicateImage = () => {
     if (!image) return;
@@ -241,8 +296,8 @@ export default function Home() {
         {contextMenu && <div className="context-menu" style={{ left: Math.min(contextMenu.x, window.innerWidth - 230), top: Math.min(contextMenu.y, window.innerHeight - 260) }} onClick={(event) => event.stopPropagation()}>
           <div className="context-menu-title"><span><ImageIcon size={14} /> Image actions</span><kbd>ESC</kbd></div>
           <div className="context-menu-divider" />
-          <button className="context-menu-item" onClick={copyImage}><Clipboard size={15} /><span>Copy image</span><kbd>⌘ C</kbd></button>
-          <button className="context-menu-item" onClick={downloadImage}><Download size={15} /><span>Download image</span><kbd>⌘ S</kbd></button>
+          <button className="context-menu-item" onClick={copyImage}><Clipboard size={15} /><span>Copy with annotations</span><kbd>⌘ C</kbd></button>
+          <button className="context-menu-item" onClick={downloadImage}><Download size={15} /><span>Download with annotations</span><kbd>⌘ S</kbd></button>
           <button className="context-menu-item" onClick={duplicateImage}><ImagePlus size={15} /><span>Duplicate image</span></button>
           <div className="context-menu-divider" />
           <button className="context-menu-item danger" onClick={removeImage}><Trash2 size={15} /><span>Remove image</span></button>
