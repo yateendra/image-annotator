@@ -38,6 +38,7 @@ type Mark = {
   y2: number;
 };
 type ContextMenu = { x: number; y: number };
+type ArrowStyle = "solid" | "dashed" | "dotted";
 
 const toolItems: { id: Tool; label: string; shortcut: string; icon: typeof MousePointer2 }[] = [
   { id: "select", label: "Select", shortcut: "V", icon: MousePointer2 },
@@ -57,6 +58,8 @@ export default function Home() {
   const [showLayers, setShowLayers] = useState(false);
   const [notice, setNotice] = useState("Ready to annotate");
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [arrowWidth, setArrowWidth] = useState(3);
+  const [arrowStyle, setArrowStyle] = useState<ArrowStyle>("solid");
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -187,7 +190,7 @@ export default function Home() {
     if (mark.tool === "box") return <rect key={mark.id} x={`${x}%`} y={`${y}%`} width={`${width}%`} height={`${height}%`} rx="8" {...common} />;
     if (mark.tool === "oval") return <ellipse key={mark.id} cx={`${x + width / 2}%`} cy={`${y + height / 2}%`} rx={`${width / 2}%`} ry={`${height / 2}%`} {...common} />;
     if (mark.tool === "marker") return <line key={mark.id} x1={`${mark.x}%`} y1={`${mark.y}%`} x2={`${mark.x2}%`} y2={`${mark.y2}%`} stroke="#f5c56d" strokeWidth="18" strokeOpacity=".28" strokeLinecap="round" vectorEffect="non-scaling-stroke" />;
-    if (mark.tool === "arrow") return <line key={mark.id} x1={`${mark.x}%`} y1={`${mark.y}%`} x2={`${mark.x2}%`} y2={`${mark.y2}%`} markerEnd="url(#arrowhead)" {...common} />;
+    if (mark.tool === "arrow") return <line key={mark.id} x1={`${mark.x}%`} y1={`${mark.y}%`} x2={`${mark.x2}%`} y2={`${mark.y2}%`} markerEnd="url(#arrowhead)" vectorEffect="non-scaling-stroke" stroke="#ff5364" strokeWidth={isDraft ? arrowWidth + 1 : arrowWidth} strokeDasharray={arrowStyle === "dashed" ? "10 7" : arrowStyle === "dotted" ? "2 7" : undefined} fill="none" strokeLinecap="round" />;
     return <line key={mark.id} x1={`${mark.x}%`} y1={`${mark.y}%`} x2={`${mark.x2}%`} y2={`${mark.y2}%`} {...common} />;
   };
 
@@ -214,6 +217,14 @@ export default function Home() {
         </div>
         <div className="tool-divider" />
         <button className="clear-button" onClick={clearAll}><Eraser size={15} /> Clear</button>
+        {tool === "arrow" && <div className="arrow-settings" aria-label="Arrow settings">
+          <span className="settings-label">Arrow</span>
+          <div className="settings-pills">
+            {[2, 3, 5, 8].map((width) => <button key={width} className={`setting-pill width-pill ${arrowWidth === width ? "selected" : ""}`} onClick={() => setArrowWidth(width)} title={`${width}px arrow`}><span style={{ width: Math.min(width * 2.2, 16), height: width, background: "currentColor" }} /></button>)}
+            <span className="settings-separator" />
+            {(["solid", "dashed", "dotted"] as ArrowStyle[]).map((style) => <button key={style} className={`setting-pill style-pill ${arrowStyle === style ? "selected" : ""}`} onClick={() => setArrowStyle(style)} title={`${style} arrow`}><span className={`line-preview ${style}`} /></button>)}
+          </div>
+        </div>}
         <div className="tool-spacer" />
         <button className="canvas-mode"><ScanLine size={14} /> Fit canvas <ChevronDown size={13} /></button>
       </section>
@@ -222,7 +233,7 @@ export default function Home() {
         <div className="canvas-wrap" ref={canvasRef} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onContextMenu={(event) => { if (!image) return; event.preventDefault(); setContextMenu({ x: event.clientX, y: event.clientY }); }} onDoubleClick={() => !image && fileRef.current?.click()}>
           <div className={`canvas ${image ? "has-image" : ""}`}>
             {image ? <img className="source-image" src={image} alt="Uploaded annotation source" /> : <div className="empty-state"><div className="empty-icon"><ImageIcon size={22} /></div><h1>Paste an image to start</h1><p>Drop an image here or press <kbd>⌘ V</kbd> to paste from clipboard</p><button className="empty-cta" onClick={() => fileRef.current?.click()}><Upload size={15} /> Choose image</button><div className="empty-hint">PNG, JPG or WebP · everything stays in your browser</div></div>}
-            <svg className="marks-layer" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="arrowhead" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="none" stroke="#a7b4ff" strokeWidth="1.4" /></marker></defs>{marks.map((mark) => renderMark(mark))}{draft && renderMark(draft, true)}</svg>
+            <svg className="marks-layer" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="arrowhead" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="none" stroke="#ff5364" strokeWidth="1.4" /></marker></defs>{marks.map((mark) => renderMark(mark))}{draft && renderMark(draft, true)}</svg>
             {image && <div className="canvas-corners"><span /><span /><span /><span /></div>}
           </div>
           <div className="canvas-footer"><span><span className="status-dot" /> {notice}</span><span>Drag to draw · right-click for options</span><span>{image ? "1 image" : "0 images"} · {marks.length} {marks.length === 1 ? "mark" : "marks"}</span></div>
